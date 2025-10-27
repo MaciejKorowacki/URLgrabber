@@ -71,7 +71,7 @@ namespace URLgrabberTEST
 
             await webView.EnsureCoreWebView2Async(null);
 
-            // Update textbox when navigation starts (e.g., link clicked)
+            // Update textbox when navigation starts (link clicked)
             webView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
 
             webView.CoreWebView2.Navigate("https://www.ironpdf.com");
@@ -163,3 +163,4 @@ namespace URLgrabberTEST
         }
     }
 }
+
