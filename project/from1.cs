@@ -27,6 +27,7 @@ namespace URLgrabberTEST
 
             // URL TextBox
             urlTextBox = new TextBox { Left = 10, Top = 10, Width = 1000 };
+            urlTextBox.KeyDown += UrlTextBox_KeyDown; // Enter key support
             this.Controls.Add(urlTextBox);
 
             // Go Button
@@ -46,7 +47,7 @@ namespace URLgrabberTEST
             urlTreeView.NodeMouseDoubleClick += UrlTreeView_NodeMouseDoubleClick;
             this.Controls.Add(urlTreeView);
 
-            // Odczyt z pliku przy starcie
+            // Load URLs from file
             if (System.IO.File.Exists(urlsFile))
             {
                 string[] lines = System.IO.File.ReadAllLines(urlsFile);
@@ -70,10 +71,13 @@ namespace URLgrabberTEST
 
             await webView.EnsureCoreWebView2Async(null);
 
+            // Update textbox when navigation starts (e.g., link clicked)
+            webView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
+
             webView.CoreWebView2.Navigate("https://www.ironpdf.com");
             urlTextBox.Text = "https://www.ironpdf.com";
 
-            // Wstrzyknięcie JS do przechwytywania prawych kliknięć w link
+            // Inject JS to capture right-clicked links
             await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 document.addEventListener('contextmenu', function(e) {
                     let target = e.target;
@@ -88,27 +92,55 @@ namespace URLgrabberTEST
                 });
             ");
 
-            // Obsługa wiadomości z JS
+            // Handle messages from JS
             webView.CoreWebView2.WebMessageReceived += (sender, args) =>
             {
                 string linkUrl = args.TryGetWebMessageAsString();
                 if (!string.IsNullOrEmpty(linkUrl))
                 {
                     urlTreeView.Nodes.Add(linkUrl);
-                    SaveUrlsToFile(); // zapis do pliku
+                    SaveUrlsToFile();
                 }
             };
         }
 
-        private void GoButton_Click(object sender, EventArgs e)
+        // Update URL textbox when navigation starts
+        private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
-            string url = urlTextBox.Text.Trim();
-            if (!url.StartsWith("http://") && !url.StartsWith("https://"))
-                url = "https://" + url;
-
-            webView.CoreWebView2.Navigate(url);
+            urlTextBox.Text = e.Uri;
         }
 
+        // Go button click
+        private void GoButton_Click(object sender, EventArgs e)
+        {
+            NavigateToUrl();
+        }
+
+        // Handle Enter key in URL textbox
+        private void UrlTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true; // Prevent beep
+                NavigateToUrl();
+            }
+        }
+
+        // Navigate to the URL in the textbox
+        private void NavigateToUrl()
+        {
+            string url = urlTextBox.Text.Trim();
+            if (!string.IsNullOrEmpty(url))
+            {
+                if (!url.StartsWith("http://") && !url.StartsWith("https://"))
+                {
+                    url = "https://" + url;
+                }
+                webView.CoreWebView2.Navigate(url);
+            }
+        }
+
+        // Double-click a node in TreeView
         private void UrlTreeView_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Node != null && !string.IsNullOrEmpty(e.Node.Text))
@@ -118,6 +150,7 @@ namespace URLgrabberTEST
             }
         }
 
+        // Save TreeView URLs to file
         private void SaveUrlsToFile()
         {
             using (var writer = new System.IO.StreamWriter(urlsFile))
