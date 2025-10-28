@@ -9,6 +9,8 @@ namespace URLgrabberTEST
     {
         private bool autoGrabEnabled = false;
 
+        private readonly string urlsFile = "urls.txt";
+
         public Form1()
         {
             InitializeComponent();
@@ -65,7 +67,7 @@ namespace URLgrabberTEST
 
             webView.CoreWebView2.WebMessageReceived += (s, ev) =>
             {
-                string linkUrl = ev.TryGetWebMessageAsString();
+                string linkUrl = ev.TryGetWebMessageAsString()?.ToLower();
                 if (!string.IsNullOrEmpty(linkUrl))
                 {
                     if (autoGrabEnabled)
@@ -102,7 +104,7 @@ namespace URLgrabberTEST
 
         private void NavigateToUrl()
         {
-            string url = urlTextBox.Text.Trim();
+            string url = urlTextBox.Text.Trim().ToLower();
             if (!string.IsNullOrEmpty(url))
                 NavigateTo(url);
         }
