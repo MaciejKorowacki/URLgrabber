@@ -1,83 +1,54 @@
 using System;
+using System.IO;
 using System.Windows.Forms;
-using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Web.WebView2.Core;
 
 namespace URLgrabberTEST
 {
     public partial class Form1 : Form
     {
-        private WebView2 webView;
-        private TextBox urlTextBox;
-        private Button goButton;
-        private TreeView urlTreeView;
-        private string urlsFile = "urls.txt";
+        private bool autoGrabEnabled = false;
 
         public Form1()
         {
             InitializeComponent();
-            InitializeBrowserComponents();
         }
 
-        private async void InitializeBrowserComponents()
+        private async void Form1_Load(object sender, EventArgs e)
         {
-            this.Text = "WebView2 Browser with Persistent Links";
-            this.Width = 1400;
-            this.Height = 800;
+            // deafult Autograb
+            autoGrabToolStripButton.Checked = false; // OFF
+            autoGrabToolStripButton.Text = "Autograb: OFF";
 
-            // URL TextBox
-            urlTextBox = new TextBox { Left = 10, Top = 10, Width = 1000 };
-            urlTextBox.KeyDown += UrlTextBox_KeyDown; // Enter key support
-            this.Controls.Add(urlTextBox);
-
-            // Go Button
-            goButton = new Button { Text = "Go", Left = 1020, Top = 8, Width = 100 };
-            goButton.Click += GoButton_Click;
-            this.Controls.Add(goButton);
-
-            // TreeView
-            urlTreeView = new TreeView
+            // Autograb toggle
+            autoGrabToolStripButton.CheckedChanged += (s, ev) =>
             {
-                Left = 1130,
-                Top = 10,
-                Width = 250,
-                Height = this.ClientSize.Height - 20,
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right
+                autoGrabEnabled = autoGrabToolStripButton.Checked;
+                autoGrabToolStripButton.Text = autoGrabEnabled ? "Autograb: ON" : "Autograb: OFF";
             };
-            urlTreeView.NodeMouseDoubleClick += UrlTreeView_NodeMouseDoubleClick;
-            this.Controls.Add(urlTreeView);
 
-            // Load URLs from file
-            if (System.IO.File.Exists(urlsFile))
-            {
-                string[] lines = System.IO.File.ReadAllLines(urlsFile);
-                foreach (var line in lines)
-                {
-                    if (!string.IsNullOrWhiteSpace(line))
-                        urlTreeView.Nodes.Add(line.Trim());
-                }
-            }
+            // save to file
+            saveToolStripButton.Click += (s, ev) => SaveUrlsToFileDialog();
 
-            // WebView2
-            webView = new WebView2
+            // load from file
+            loadToolStripButton.Click += (s, ev) => LoadUrlsFromFileDialog();
+
+            // Go button
+            goButton.Click += (s, ev) => NavigateToUrl();
+            urlTextBox.KeyDown += UrlTextBox_KeyDown;
+
+            // TreeView double click
+            urlTreeView.NodeMouseDoubleClick += (s, ev) =>
             {
-                Left = 10,
-                Top = 40,
-                Width = 1110,
-                Height = this.ClientSize.Height - 50,
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                if (ev.Node != null && !string.IsNullOrEmpty(ev.Node.Text))
+                    NavigateTo(ev.Node.Text);
             };
-            this.Controls.Add(webView);
 
+            // Initialize WebView2
             await webView.EnsureCoreWebView2Async(null);
-
-            // Update textbox when navigation starts (e.g., link clicked)
             webView.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
 
-            webView.CoreWebView2.Navigate("https://www.ironpdf.com");
-            urlTextBox.Text = "https://www.ironpdf.com";
-
-            // Inject JS to capture right-clicked links
+            // JS context menu capture
             await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 document.addEventListener('contextmenu', function(e) {
                     let target = e.target;
@@ -92,74 +63,138 @@ namespace URLgrabberTEST
                 });
             ");
 
-            // Handle messages from JS
-            webView.CoreWebView2.WebMessageReceived += (sender, args) =>
+            webView.CoreWebView2.WebMessageReceived += (s, ev) =>
             {
-                string linkUrl = args.TryGetWebMessageAsString();
+                string linkUrl = ev.TryGetWebMessageAsString();
                 if (!string.IsNullOrEmpty(linkUrl))
                 {
-                    urlTreeView.Nodes.Add(linkUrl);
-                    SaveUrlsToFile();
+                    if (autoGrabEnabled)
+                        AddLink(linkUrl);
+                    else
+                    {
+                        contextMenuStrip.Items.Clear();
+                        contextMenuStrip.Items.Add("Add link", null, (o, a) => AddLink(linkUrl));
+                        contextMenuStrip.Show(Cursor.Position);
+                    }
                 }
             };
+
+            // Start with empty TreeView
+            urlTreeView.Nodes.Clear();
+
+            // Default page
+            NavigateTo("https://www.ironpdf.com");
         }
 
-        // Update URL textbox when navigation starts
         private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
             urlTextBox.Text = e.Uri;
         }
 
-        // Go button click
-        private void GoButton_Click(object sender, EventArgs e)
-        {
-            NavigateToUrl();
-        }
-
-        // Handle Enter key in URL textbox
         private void UrlTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
             {
-                e.SuppressKeyPress = true; // Prevent beep
+                e.SuppressKeyPress = true;
                 NavigateToUrl();
             }
         }
 
-        // Navigate to the URL in the textbox
         private void NavigateToUrl()
         {
             string url = urlTextBox.Text.Trim();
             if (!string.IsNullOrEmpty(url))
+                NavigateTo(url);
+        }
+
+        private void NavigateTo(string url)
+        {
+            if (!url.StartsWith("http://") && !url.StartsWith("https://"))
+                url = "https://" + url;
+
+            webView.CoreWebView2.Navigate(url);
+        }
+
+        private void AddLink(string url)
+        {
+            if (!urlTreeView.Nodes.ContainsKey(url))
             {
-                if (!url.StartsWith("http://") && !url.StartsWith("https://"))
-                {
-                    url = "https://" + url;
-                }
-                webView.CoreWebView2.Navigate(url);
+                TreeNode node = new TreeNode(url) { Name = url };
+                urlTreeView.Nodes.Add(node);
+                UpdateStatus();
             }
         }
 
-        // Double-click a node in TreeView
-        private void UrlTreeView_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
+        private void UpdateStatus()
         {
-            if (e.Node != null && !string.IsNullOrEmpty(e.Node.Text))
+            statusLabel.Text = $"Links: {urlTreeView.Nodes.Count}";
+        }
+
+        
+        private void SaveUrlsToFileDialog()
+        {
+            using (SaveFileDialog dlg = new SaveFileDialog())
             {
-                webView.CoreWebView2.Navigate(e.Node.Text);
-                urlTextBox.Text = e.Node.Text;
+                dlg.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+                dlg.Title = "Save URLs to file";
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        using (var writer = new StreamWriter(dlg.FileName))
+                        {
+                            foreach (TreeNode node in urlTreeView.Nodes)
+                                writer.WriteLine(node.Text);
+                        }
+                        statusLabel.Text = $"Saved {urlTreeView.Nodes.Count} links to {dlg.FileName}";
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error saving file: " + ex.Message);
+                    }
+                }
             }
         }
 
-        // Save TreeView URLs to file
-        private void SaveUrlsToFile()
+        private void LoadUrlsFromFileDialog()
         {
-            using (var writer = new System.IO.StreamWriter(urlsFile))
+            using (OpenFileDialog dlg = new OpenFileDialog())
             {
-                foreach (TreeNode node in urlTreeView.Nodes)
+                dlg.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+                dlg.Title = "Load URLs from file";
+                if (dlg.ShowDialog() == DialogResult.OK)
                 {
-                    writer.WriteLine(node.Text);
+                    try
+                    {
+                        urlTreeView.Nodes.Clear();
+                        string[] lines = File.ReadAllLines(dlg.FileName);
+                        foreach (var line in lines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                                AddLink(line.Trim());
+                        }
+                        statusLabel.Text = $"Loaded {urlTreeView.Nodes.Count} links from {dlg.FileName}";
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error loading file: " + ex.Message);
+                    }
                 }
             }
+        }
+        // pop-up to save urls. will add logic to check if they were saved prior to exiting if so pop-up wont show up.
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            var result = MessageBox.Show("Do you want to save URLs before exit?", "Confirm", MessageBoxButtons.YesNoCancel);
+            if (result == DialogResult.Yes)
+            {
+                SaveUrlsToFileDialog();
+            }
+            else if (result == DialogResult.Cancel)
+            {
+                e.Cancel = true;
+            }
+            base.OnFormClosing(e);
         }
     }
 }
