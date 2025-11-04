@@ -1,4 +1,4 @@
-namespace URLgrabberTEST
+namespace UrlGrabber
 {
     internal static class Program
     {
