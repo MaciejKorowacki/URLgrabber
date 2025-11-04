@@ -5,7 +5,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using Microsoft.Web.WebView2.Core;
 
-namespace URLgrabberTEST
+namespace UrlGrabber
 {
     public partial class Form1 : Form
     {
